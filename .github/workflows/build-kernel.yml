@@ -1,0 +1,162 @@
+name: Build RM9 Kernel (pineapple GKI)
+
+# Builds the RedMagic 9 Pro (Qualcomm "pineapple" / SM8650, android14-6.1)
+# kernel with the Qualcomm kleaf/Bazel build system.
+#
+# This repository only contains the device sources:
+#   kernel_platform/common, kernel_platform/msm-kernel, kernel_platform/qcom
+#   (plus top-level external/, kernel/, vendor/).
+# The kleaf build tooling + prebuilts (build/, prebuilts/, tools/, external/,
+# bootable/) are fetched at build time with `repo` using the trimmed manifest
+# .ci/rm9_pineapple.xml, pinned to CLO drop
+# AU_LINUX_KERNEL.PLATFORM.3.0.C1.00.00.00.057.010 (clang-r487747c, matches this
+# tree's common/build.config.constants). Our own sources stay authoritative.
+#
+# Baseline build: STOCK kernel, no SukiSU / no SUSFS yet.
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "Build variant"
+        type: choice
+        default: gki
+        options: [gki, consolidate]
+      lto:
+        description: "LTO mode (thin is lighter on CI; full is slow/RAM-hungry; none is fastest to compile but largest)"
+        type: choice
+        default: thin
+        options: [thin, full, none]
+
+concurrency:
+  group: build-kernel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      VARIANT: ${{ github.event.inputs.variant || 'gki' }}
+      LTO: ${{ github.event.inputs.lto || 'thin' }}
+      # CLO drop the kleaf tooling is pinned to (documentation only; the real
+      # pins live in .ci/rm9_pineapple.xml).
+      CLO_TAG: AU_LINUX_KERNEL.PLATFORM.3.0.C1.00.00.00.057.010
+
+    steps:
+      - name: Free up disk space
+        run: |
+          echo "Before:"; df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo docker image prune --all --force || true
+          echo "After:"; df -h /
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            git curl wget zip unzip rsync ccache python3 python-is-python3 \
+            bc bison flex libssl-dev libelf-dev build-essential \
+            libncurses-dev openssl
+
+      - name: Install the `repo` tool
+        run: |
+          mkdir -p "$HOME/.bin"
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo > "$HOME/.bin/repo"
+          chmod a+x "$HOME/.bin/repo"
+          echo "$HOME/.bin" >> "$GITHUB_PATH"
+          git config --global user.name  "rm9-ci"
+          git config --global user.email "rm9-ci@users.noreply.github.com"
+          git config --global color.ui false
+
+      - name: Checkout device sources
+        uses: actions/checkout@v4
+        with:
+          # Check out at the workspace root: this repo's root IS the kleaf
+          # workspace parent, so kernel_platform/ lands where repo expects it.
+          path: .
+          fetch-depth: 1
+
+      - name: Fetch kleaf tooling + prebuilts (repo sync)
+        run: |
+          set -eux
+          # Build a tiny local git repo that holds the trimmed manifest, so
+          # `repo init -u` can consume it without a network manifest repo.
+          MANI_DIR="$RUNNER_TEMP/rm9-manifest"
+          rm -rf "$MANI_DIR"; mkdir -p "$MANI_DIR"
+          cp "$GITHUB_WORKSPACE/.ci/rm9_pineapple.xml" "$MANI_DIR/default.xml"
+          git -C "$MANI_DIR" -c init.defaultBranch=master init -q
+          git -C "$MANI_DIR" add default.xml
+          git -C "$MANI_DIR" commit -qm "rm9 pineapple manifest ($CLO_TAG)"
+
+          cd "$GITHUB_WORKSPACE"
+          repo init -u "$MANI_DIR" -b master -m default.xml \
+            --depth=1 --no-clone-bundle
+          repo sync -c -j"$(nproc --all)" --no-tags --optimized-fetch \
+            --force-sync --fail-fast
+
+      - name: Recreate workspace symlinks removed from the trimmed manifest
+        run: |
+          set -eux
+          cd "$GITHUB_WORKSPACE/kernel_platform"
+          # These three links are normally created by repo from the
+          # kernel/common and kernel/qcom <linkfile> entries, which we dropped
+          # because this repo already provides common/ and msm-kernel/.
+          ln -sfn msm-kernel/bazel.WORKSPACE     WORKSPACE
+          ln -sfn msm-kernel/build_with_bazel.py build_with_bazel.py
+          ln -sfn common                         .source_date_epoch_dir
+          ls -la WORKSPACE build_with_bazel.py .source_date_epoch_dir
+          test -x tools/bazel
+
+      - name: Sanity-check assembled workspace
+        run: |
+          set -eux
+          cd "$GITHUB_WORKSPACE/kernel_platform"
+          test -f build/kernel/kleaf/workspace.bzl
+          test -d prebuilts/clang/host/linux-x86/clang-r487747c
+          test -f msm-kernel/msm_kernel_extensions.bzl
+          test -f bootable/bootloader/edk2/abl_extensions.bzl
+
+      - name: Build kernel (Bazel / kleaf)
+        run: |
+          set -eux
+          cd "$GITHUB_WORKSPACE/kernel_platform"
+          ./build_with_bazel.py \
+            -t pineapple "$VARIANT" \
+            --skip abl \
+            --lto="$LTO"
+
+      - name: Locate and stage artifacts
+        id: stage
+        run: |
+          set -eux
+          cd "$GITHUB_WORKSPACE/kernel_platform"
+          DIST="out/msm-kernel-pineapple-${VARIANT}/dist"
+          if [ ! -d "$DIST" ]; then
+            echo "Expected dist dir not found at $DIST; searching..."
+            DIST="$(find out -maxdepth 3 -type d -name dist | head -n1)"
+          fi
+          echo "dist dir: $DIST"
+          ls -la "$DIST" || true
+          OUT="$GITHUB_WORKSPACE/artifacts"
+          mkdir -p "$OUT"
+          # Flashable images + the raw kernel image; skip the huge vmlinux.
+          for f in Image Image.gz Image.lz4 boot.img vendor_boot.img \
+                   init_boot.img dtbo.img *.dtb system_dlkm.img \
+                   vendor_dlkm.img super.img; do
+            cp -v "$DIST"/$f "$OUT"/ 2>/dev/null || true
+          done
+          # Modules, if present.
+          find "$DIST" -name '*.ko' -exec cp -v {} "$OUT"/ \; 2>/dev/null || true
+          echo "Staged:"; ls -la "$OUT"
+          test -n "$(ls -A "$OUT")" || { echo "No artifacts staged!"; exit 1; }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rm9-pineapple-${{ env.VARIANT }}-${{ github.run_number }}
+          path: artifacts/**
+          if-no-files-found: error
+          retention-days: 14
