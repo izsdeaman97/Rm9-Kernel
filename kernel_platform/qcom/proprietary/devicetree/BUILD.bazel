@@ -1,0 +1,32 @@
+# Device-tree package for the Qualcomm "pineapple" (SM8650) tree.
+#
+# Reached by kleaf through the symlink
+#   kernel_platform/msm-kernel/arch/arm64/boot/dts/vendor -> here
+# so the Bazel package is //msm-kernel/arch/arm64/boot/dts/vendor, from which
+# msm-kernel/msm_kernel_extensions.bzl loads qcom/platform_map.bzl and uses the
+# :msm_dt target as the device-tree source tree
+# (get_dtstree() -> //msm-kernel/arch/arm64/boot/dts/vendor:msm_dt).
+#
+# kernel_dtstree's makefile defaults to the package-root ":Makefile", so the
+# device-tree root (dtstree) is this directory and the root Makefile recurses
+# into qcom/ (subdir-y += qcom), which builds the pineapple/cliffs dtbs.
+# Mirrors the OnePlus/CLO SM8650 proprietary devicetree layout.
+
+load("//build/kernel/kleaf:kernel.bzl", "kernel_dtstree")
+
+kernel_dtstree(
+    name = "msm_dt",
+    srcs = glob(
+        [
+            "Makefile",
+            "qcom/**",
+        ],
+        exclude = [
+            "**/.*",
+            "**/.*/**",
+            "**/*.bazel",
+            "**/*.bzl",
+        ],
+    ),
+    visibility = ["//visibility:public"],
+)

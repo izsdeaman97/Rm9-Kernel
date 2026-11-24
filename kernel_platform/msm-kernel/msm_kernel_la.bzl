@@ -69,6 +69,18 @@ def _define_build_config(
             '[ "$KERNEL_CMDLINE_CONSOLE_AUTO" != "0" ] && KERNEL_VENDOR_CMDLINE+=\' earlycon={} \''.format(boot_image_opts.earlycon_addr),
             "KERNEL_VENDOR_CMDLINE+=' {} '".format(" ".join(boot_image_opts.kernel_vendor_cmdline_extras)),
             "VENDOR_BOOTCONFIG+='androidboot.first_stage_console=1 androidboot.hardware=qcom_kp'",
+        ] + ([
+            # ZTE/Nubia OEM config selectors for the RedMagic 9 Pro (nubia
+            # NX769J = board "tiro"). kleaf GENERATES the build config from this
+            # list and never sources build.config.msm.pineapple, so these must be
+            # injected here for merge_defconfig_fragments() (build.config.msm.common)
+            # to merge oem/pineapple_diff_config + oem/boards/tiro_diff_config +
+            # oem/zlog_diff_config, enabling the vendor OEM modules (kmparam.ko,
+            # soc_fan.ko, zlog, ...) that pineapple.bzl's module list expects.
+            "PRODUCT_DEVICE=pineapple",
+            "ZTE_BOARD_NAME=tiro",
+            "ZTE_FEATURE_ZTE_LOG_EXCEPTION=true",
+        ] if msm_target == "pineapple" else []) + [
             "",  # Needed for newline at end of file
         ],
     )
