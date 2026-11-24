@@ -109,6 +109,16 @@ jobs:
           ln -sfn common                         .source_date_epoch_dir
           ls -la WORKSPACE build_with_bazel.py .source_date_epoch_dir
           test -x tools/bazel
+          # Device-tree 'vendor' package symlink. The kernel's own .gitignore
+          # (msm-kernel/.gitignore: arch/*/boot/dts/vendor) excludes it, so it
+          # is recreated here instead of committed. It points at the in-repo
+          # proprietary devicetree, which carries qcom/platform_map.bzl, the
+          # qcom/ DTS sources, and the committed BUILD.bazel (:msm_dt target).
+          ln -sfn ../../../../../qcom/proprietary/devicetree \
+            msm-kernel/arch/arm64/boot/dts/vendor
+          ls -la msm-kernel/arch/arm64/boot/dts/vendor
+          test -f msm-kernel/arch/arm64/boot/dts/vendor/qcom/platform_map.bzl
+          test -f msm-kernel/arch/arm64/boot/dts/vendor/BUILD.bazel
 
       - name: Sanity-check assembled workspace
         run: |
