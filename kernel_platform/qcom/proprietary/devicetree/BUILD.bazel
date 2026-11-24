@@ -1,34 +1,32 @@
 # Device-tree package for the Qualcomm "pineapple" (SM8650) tree.
 #
-# This directory is reached by the kleaf build through the symlink
+# Reached by kleaf through the symlink
 #   kernel_platform/msm-kernel/arch/arm64/boot/dts/vendor -> here
-# so the Bazel package label is
-#   //msm-kernel/arch/arm64/boot/dts/vendor
-# which msm-kernel/msm_kernel_extensions.bzl loads (qcom/platform_map.bzl) and
-# whose :msm_dt target it uses as the device-tree source tree
+# so the Bazel package is //msm-kernel/arch/arm64/boot/dts/vendor, from which
+# msm-kernel/msm_kernel_extensions.bzl loads qcom/platform_map.bzl and uses the
+# :msm_dt target as the device-tree source tree
 # (get_dtstree() -> //msm-kernel/arch/arm64/boot/dts/vendor:msm_dt).
 #
-# The actual DTS/DTSI sources and their (self-contained) Makefile live in the
-# qcom/ subdirectory, so the dtstree Makefile is qcom/Makefile; kleaf derives
-# the device-tree root from the Makefile's directory (see kernel_env.bzl:
-# export dtstree=$(dirname ${DTSTREE_MAKEFILE})).
+# kernel_dtstree's makefile defaults to the package-root ":Makefile", so the
+# device-tree root (dtstree) is this directory and the root Makefile recurses
+# into qcom/ (subdir-y += qcom), which builds the pineapple/cliffs dtbs.
+# Mirrors the OnePlus/CLO SM8650 proprietary devicetree layout.
 
 load("//build/kernel/kleaf:kernel.bzl", "kernel_dtstree")
-
-package(
-    default_visibility = ["//visibility:public"],
-)
 
 kernel_dtstree(
     name = "msm_dt",
     srcs = glob(
-        ["**"],
+        [
+            "Makefile",
+            "qcom/**",
+        ],
         exclude = [
             "**/.*",
             "**/.*/**",
-            "**/BUILD.bazel",
+            "**/*.bazel",
             "**/*.bzl",
         ],
     ),
-    makefile = "qcom/Makefile",
+    visibility = ["//visibility:public"],
 )
