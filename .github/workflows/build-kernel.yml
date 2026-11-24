@@ -34,7 +34,11 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Ubuntu 24.04 (ubuntu-latest) ships glibc >= 2.38, whose <stdlib.h>
+    # redirects strtol/strtoul/strtoull to __isoc23_* symbols that the kernel's
+    # bundled toolchain libc (clang-r487747c, android14-6.1) lacks, breaking the
+    # host tool resolve_btfids at link time. Pin glibc 2.35 via 22.04.
+    runs-on: ubuntu-22.04
     timeout-minutes: 240
     env:
       VARIANT: ${{ github.event.inputs.variant || 'gki' }}
