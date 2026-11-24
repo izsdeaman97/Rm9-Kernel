@@ -4,6 +4,15 @@ load(":image_opts.bzl", "boot_image_opts")
 
 target_name = "pineapple"
 
+# ZTE/Nubia board selection. The RedMagic 9 Pro is nubia NX769J, whose board
+# name is "tiro" (see arch/arm64/configs/oem/boards/tiro_diff_config). These
+# mirror the shell variables of the same name set in build.config.msm.pineapple
+# so that the in-tree module lists below match the OEM defconfig fragments that
+# merge_defconfig_fragments() enables. Upstream Nubia injects these from its
+# build system; this tree pins them for RedMagic 9 Pro.
+ZTE_BOARD_NAME = "tiro"
+ZTE_FEATURE_ZTE_LOG_EXCEPTION = "true"
+
 def define_pineapple():
     _pineapple_in_tree_modules = [
         # keep sorted

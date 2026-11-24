@@ -9,6 +9,19 @@ MSM_ARCH=pineapple
 VARIANTS=(consolidate gki)
 [ -z "${VARIANT}" ] && VARIANT=consolidate
 
+################################################################################
+## ZTE/Nubia OEM config selection (RedMagic 9 Pro = nubia NX769J = board "tiro").
+## Consumed by merge_defconfig_fragments() in build.config.msm.common, which
+## merges:
+##   arch/arm64/configs/oem/${PRODUCT_DEVICE}_diff_config
+##   arch/arm64/configs/oem/boards/${ZTE_BOARD_NAME}_diff_config
+##   arch/arm64/configs/oem/zlog_diff_config   (when ZTE_FEATURE..._EXCEPTION=true)
+## Keep these in sync with the ZTE_* constants in pineapple.bzl so the in-tree
+## module lists match the enabled configs.
+PRODUCT_DEVICE=pineapple
+ZTE_BOARD_NAME=tiro
+ZTE_FEATURE_ZTE_LOG_EXCEPTION=true
+
 ABL_SRC=bootable/bootloader/edk2
 BOOT_IMAGE_HEADER_VERSION=4
 BASE_ADDRESS=0x80000000
